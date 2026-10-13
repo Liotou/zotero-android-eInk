@@ -84,7 +84,7 @@ jobs:
             assembleInternalEink
 
       - name: Keep APK for the smoke test
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: zotero-eink-apk
           path: app/build/outputs/apk/internal/eink/*.apk
@@ -149,7 +149,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: zotero-eink-apk
           path: apk
@@ -172,7 +172,7 @@ jobs:
 
       - name: Keep screenshot and logcat
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: smoke-test
           path: smoke-test/
