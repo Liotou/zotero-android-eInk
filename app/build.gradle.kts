@@ -41,6 +41,7 @@ android {
         buildConfigField("String", "BASE_API_URL", "\"https://api.zotero.org\"")
         buildConfigField("boolean", "EVENT_AND_CRASH_LOGGING_ENABLED", "false")
         buildConfigField("String", "PSPDFKIT_KEY", "\"\"")
+        buildConfigField("boolean", "OFFICIAL_UPDATE_CHECK_ENABLED", "true")
         manifestPlaceholders["enableCrashReporting"] = false
 
         //Making build version components to be accessible from within the app.
@@ -63,6 +64,23 @@ android {
                 keyAlias = secrets[0]
                 storePassword = secrets[1]
                 keyPassword = secrets[2]
+            }
+        }
+        // Signing key of the personal E-Ink builds. CI provides a private keystore through
+        // the EINK_KEYSTORE_* environment variables; without them the public debug.keystore
+        // of the repository is used, so that successive builds can still update each other.
+        create("eink") {
+            val einkKeystore = System.getenv("EINK_KEYSTORE_FILE")
+            if (!einkKeystore.isNullOrBlank() && file(einkKeystore).exists()) {
+                storeFile = file(einkKeystore)
+                storePassword = System.getenv("EINK_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("EINK_KEY_ALIAS")
+                keyPassword = System.getenv("EINK_KEY_PASSWORD")
+            } else {
+                storeFile = rootProject.file("debug.keystore")
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
             }
         }
     }
@@ -103,6 +121,19 @@ android {
             buildConfigField("boolean", "EVENT_AND_CRASH_LOGGING_ENABLED", "true")
             manifestPlaceholders["enableCrashReporting"] = true
         }
+        // Personal E-Ink build: optimized like release, but installable next to the official
+        // app, signed with our own key and without Zotero's crash reporting or update banner.
+        create("eink") {
+            initWith(getByName("release"))
+            applicationIdSuffix = ".eink"
+            signingConfig = signingConfigs.getAt("eink")
+            resValue("string", "app_name", """"Zotero E-Ink"""")
+
+            buildConfigField("boolean", "EVENT_AND_CRASH_LOGGING_ENABLED", "false")
+            buildConfigField("boolean", "OFFICIAL_UPDATE_CHECK_ENABLED", "false")
+            manifestPlaceholders["enableCrashReporting"] = false
+            extra.set("enableCrashlytics", false)
+        }
     }
     setDefaultProductFlavors()
     productFlavors {
@@ -138,6 +169,21 @@ android {
 
     androidComponents {
         beforeVariants { it.ignoreUnusedVariants() }
+
+        // CI passes a build-time based versionCode so that every new E-Ink build can be
+        // installed as an update of the previous one, whatever branch it comes from.
+        onVariants(selector().withBuildType("eink")) { variant ->
+            val einkVersionCode = (findProperty("einkVersionCode") as String?)?.toInt()
+                ?: BuildConfig.versionCode
+            val einkBuildNumber = (findProperty("einkBuildNumber") as String?) ?: "local"
+            variant.outputs.forEach { output ->
+                output.versionCode.set(einkVersionCode)
+                output.versionName.set("${BuildConfig.version.name}-eink.$einkBuildNumber")
+            }
+            // No tablet uses 32-bit x86: dropping it saves ~30 MB per download.
+            // x86_64 is kept for the emulator smoke tests.
+            variant.packaging.jniLibs.excludes.add("lib/x86/**")
+        }
     }
 }
 

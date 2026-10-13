@@ -24,6 +24,7 @@ import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
 import org.joda.time.DateTime
+import org.zotero.android.BuildConfig
 import org.zotero.android.androidx.content.copyHtmlToClipboard
 import org.zotero.android.androidx.content.copyPlainTextToClipboard
 import org.zotero.android.androidx.content.longToast
@@ -241,7 +242,8 @@ internal class AllItemsViewModel @Inject constructor(
     private fun maybeShowAppUpdateDialog() {
         val doNotShowAppUpdateBannerBeforeTime = defaults.getDoNotShowAppUpdateBannerBeforeTime()
 
-        if (updateSuggestionUseCase.wasDownloadedFromGooglePlayStore()
+        if (!BuildConfig.OFFICIAL_UPDATE_CHECK_ENABLED
+            || updateSuggestionUseCase.wasDownloadedFromGooglePlayStore()
             || System.currentTimeMillis() < doNotShowAppUpdateBannerBeforeTime) {
             return
         }

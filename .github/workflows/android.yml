@@ -1,10 +1,9 @@
 name: Zotero Android CI
 
 on:
-  push:
-    # Pattern matched against refs/tags
-    tags:
-      - '**'  # Push events to every tag including hierarchical tags like v1.0/beta
+  # Upstream Google Play deployment: it needs Zotero's secrets, so in this fork it only runs
+  # when started manually. Personal builds are made by eink-apk.yml.
+  workflow_dispatch:
 
 env:
   ANDROID_PUBLISHER_CREDENTIALS: ${{secrets.ANDROID_PUBLISHER_CREDENTIALS}}

@@ -1,0 +1,177 @@
+name: Zotero E-Ink APK
+
+# Builds the personal "Zotero E-Ink" APK (package org.zotero.android.eink) and publishes it
+# as a GitHub release, so that it can be installed and updated on the tablet (e.g. with Obtainium).
+#   - default branch  -> regular release (stable)
+#   - other branches  -> pre-release (test build)
+
+on:
+  push:
+    branches:
+      - master
+      - 'claude/**'
+    paths-ignore:
+      - '**.md'
+  workflow_dispatch:
+
+concurrency:
+  group: eink-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          java-version: '17'
+          distribution: 'zulu'
+          cache: gradle
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.10'
+
+      # Runs every scripts/bundle_* script (translators, reader, styles, ...) so that new
+      # bundles added upstream are picked up automatically. *_local.sh are for local dev only.
+      - name: Bundle web assets
+        run: |
+          set -e
+          for script in scripts/bundle_*; do
+            case "$script" in *_local.sh) continue ;; esac
+            echo "::group::$script"
+            case "$script" in
+              *.py) python3 "$script" ;;
+              *.sh) bash "$script" ;;
+            esac
+            echo "::endgroup::"
+          done
+
+      - name: Prepare signing key
+        env:
+          EINK_KEYSTORE_BASE64: ${{ secrets.EINK_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$EINK_KEYSTORE_BASE64" ]; then
+            echo "$EINK_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/eink.keystore"
+            echo "EINK_KEYSTORE_FILE=$RUNNER_TEMP/eink.keystore" >> "$GITHUB_ENV"
+          else
+            echo "::warning::No EINK_KEYSTORE_BASE64 secret, the APK is signed with the public debug.keystore."
+          fi
+
+      - name: Build APK
+        env:
+          EINK_KEYSTORE_PASSWORD: ${{ secrets.EINK_KEYSTORE_PASSWORD }}
+          EINK_KEY_ALIAS: ${{ secrets.EINK_KEY_ALIAS }}
+          EINK_KEY_PASSWORD: ${{ secrets.EINK_KEY_PASSWORD }}
+        run: |
+          # Minutes elapsed since 2026-01-01 UTC: always increases, so every build installs
+          # as an update of the previous one, whatever branch it comes from.
+          VERSION_CODE=$(( ($(date +%s) - 1767225600) / 60 ))
+          ./gradlew --no-configuration-cache -PpreDexLibs=false \
+            -PeinkVersionCode="$VERSION_CODE" \
+            -PeinkBuildNumber="${{ github.run_number }}" \
+            assembleInternalEink
+
+      - name: Keep APK for the smoke test
+        uses: actions/upload-artifact@v4
+        with:
+          name: zotero-eink-apk
+          path: app/build/outputs/apk/internal/eink/*.apk
+          retention-days: 7
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -e
+          APK_DIR=app/build/outputs/apk/internal/eink
+          VERSION_NAME=$(jq -r '.elements[0].versionName' "$APK_DIR/output-metadata.json")
+          cp "$APK_DIR"/*.apk zotero-eink.apk
+
+          {
+            echo "Branche : \`$GITHUB_REF_NAME\`"
+            echo
+            echo "Commit : $GITHUB_SHA"
+            echo
+            git log -1 --format='%s'
+          } > release-notes.md
+
+          # Re-running a workflow reuses the same run number, hence the same tag.
+          gh release delete "$VERSION_NAME" --cleanup-tag --yes 2>/dev/null || true
+
+          if [ "$GITHUB_REF_NAME" = "$DEFAULT_BRANCH" ]; then
+            gh release create "$VERSION_NAME" zotero-eink.apk \
+              --target "$GITHUB_SHA" \
+              --title "Zotero E-Ink $VERSION_NAME" \
+              --notes-file release-notes.md \
+              --latest
+          else
+            gh release create "$VERSION_NAME" zotero-eink.apk \
+              --target "$GITHUB_SHA" \
+              --title "Zotero E-Ink $VERSION_NAME (test : $GITHUB_REF_NAME)" \
+              --notes-file release-notes.md \
+              --prerelease \
+              --latest=false
+          fi
+
+      - name: Delete old test releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Keeps only the 10 most recent pre-releases.
+          gh release list --limit 200 --json tagName,isPrerelease,createdAt \
+            --jq '[.[] | select(.isPrerelease)] | sort_by(.createdAt) | reverse | .[10:] | .[].tagName' |
+          while read -r tag; do
+            gh release delete "$tag" --cleanup-tag --yes
+          done
+
+  # Installs and launches the APK on an Android emulator: catches builds that crash on start.
+  # The screenshot and logcat are kept as the "smoke-test" artifact of the run.
+  smoke-test:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: zotero-eink-apk
+          path: apk
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Launch the app on an emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 33
+          target: google_apis
+          arch: x86_64
+          profile: pixel_tablet
+          disable-animations: true
+          script: scripts/eink_smoke_test.sh "$(ls apk/*.apk | head -n 1)" smoke-test 60
+
+      - name: Keep screenshot and logcat
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-test
+          path: smoke-test/
+          retention-days: 7

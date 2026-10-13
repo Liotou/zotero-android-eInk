@@ -23,7 +23,7 @@ fun <T : Any> NamedDomainObjectContainer<T>.internal(block: T.() -> Unit) {
     getByName(ProductFlavors.Environment.INTERNAL.envName()).block()
 }
 
-private val ignoreSet = setOf("devRelease", "internalDebug", "betaDebug")
+private val ignoreSet = setOf("devRelease", "internalDebug", "betaDebug", "devEink")
 
 fun VariantBuilder.ignoreUnusedVariants() {
     this.enable = !ignoreSet.contains(name)
