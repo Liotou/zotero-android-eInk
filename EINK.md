@@ -13,8 +13,9 @@ Version personnelle de Zotero pour Android, pensée pour les liseuses à encre �
    <https://github.com/ImranR98/Obtainium/releases> (fichier APK `arm64-v8a`). Android demande
    d'autoriser l'installation d'applications depuis le navigateur : accepter.
 3. Dans Obtainium : *Ajouter une application*, URL
-   `https://github.com/Liotou/zotero-android-eInk`, cocher **Inclure les préversions**
-   (pour recevoir les versions de test), puis *Ajouter* et *Installer*.
+   `https://github.com/Liotou/zotero-android-eInk`, activer l'option **Include prereleases**
+   (« inclure les préversions », pour recevoir les versions de test), puis *Ajouter* et
+   *Installer*.
 4. Ouvrir **Zotero E-Ink** et se connecter avec l'identifiant Zotero habituel : la
    bibliothèque se télécharge depuis le cloud Zotero.
 

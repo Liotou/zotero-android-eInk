@@ -93,6 +93,7 @@ jobs:
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -e
@@ -129,6 +130,7 @@ jobs:
       - name: Delete old test releases
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           # Keeps only the 10 most recent pre-releases.
           gh release list --limit 200 --json tagName,isPrerelease,createdAt \
